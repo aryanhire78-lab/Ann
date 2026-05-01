@@ -1,0 +1,4 @@
+import numpy as np
+
+arr1 =np.array([3,5,67,7])
+print(arr1)
