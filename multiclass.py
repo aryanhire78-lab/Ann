@@ -1,96 +1,66 @@
+import torch
+import torch.nn as nn
+import torch.optim as optim
+
 import numpy as np
 from sklearn.datasets import load_iris
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
-# Load Dataset
+# 1. Load data
 data = load_iris()
 X = data.data
-y = data.target
+y = data.target   # NOTE: no one-hot needed in PyTorch
 
-# One-hot encoding
-num_classes = len(np.unique(y))
-y_onehot = np.zeros((y.shape[0], num_classes))
-y_onehot[np.arange(y.shape[0]), y] = 1
-
-# Normalize features
+# 2. Normalize
 scaler = StandardScaler()
 X = scaler.fit_transform(X)
 
-# Train-test split
+# 3. Split
 X_train, X_test, y_train, y_test = train_test_split(
-    X, y_onehot, test_size=0.2, random_state=42
+    X, y, test_size=0.2, random_state=42
 )
 
-# Add slight noise to avoid overfitting
-X_train = X_train + 0.1 * np.random.randn(*X_train.shape)
+# 4. Convert to tensors
+X_train = torch.tensor(X_train, dtype=torch.float32)
+X_test  = torch.tensor(X_test, dtype=torch.float32)
 
-# Activation Functions
-def relu(x):
-    return np.maximum(0, x)
+y_train = torch.tensor(y_train, dtype=torch.long)
+y_test  = torch.tensor(y_test, dtype=torch.long)
 
-def relu_derivative(x):
-    return (x > 0).astype(float)
+# 5. Model (inbuilt activations)
+model = nn.Sequential(
+    nn.Linear(4, 20),
+    nn.ReLU(),          # inbuilt activation
+    nn.Linear(20, 3)
+)
 
-def softmax(x):
-    exp = np.exp(x - np.max(x, axis=1, keepdims=True))
-    return exp / np.sum(exp, axis=1, keepdims=True)
+# 6. Loss + optimizer (inbuilt)
+criterion = nn.CrossEntropyLoss()   # combines softmax + loss
+optimizer = optim.Adam(model.parameters(), lr=0.02)
 
-# Network Architecture
-input_size = X.shape[1]
-hidden_size = 20  # reduced from 100 to avoid overfitting
-output_size = num_classes
-
-np.random.seed(42)
-W1 = np.random.randn(input_size, hidden_size) * 0.01
-b1 = np.zeros((1, hidden_size))
-W2 = np.random.randn(hidden_size, output_size) * 0.01
-b2 = np.zeros((1, output_size))
-
-# Training Parameters
-learning_rate = 0.02
+# 7. Training
 epochs = 20
 
-# Training Loop
 for epoch in range(epochs):
-    # Forward Propagation
-    Z1 = np.dot(X_train, W1) + b1
-    A1 = relu(Z1)
-    
-    Z2 = np.dot(A1, W2) + b2
-    A2 = softmax(Z2)
+    model.train()
 
-    # Loss (Cross-Entropy)
-    loss = -np.mean(y_train * np.log(A2 + 1e-8))
+    # Forward
+    outputs = model(X_train)
+    loss = criterion(outputs, y_train)
 
-    # Backpropagation
-    dZ2 = A2 - y_train
-    dW2 = np.dot(A1.T, dZ2)
-    db2 = np.sum(dZ2, axis=0, keepdims=True)
-    
-    dA1 = np.dot(dZ2, W2.T)
-    dZ1 = dA1 * relu_derivative(Z1)
-    dW1 = np.dot(X_train.T, dZ1)
-    db1 = np.sum(dZ1, axis=0, keepdims=True)
+    # Backward
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
 
-    # Update Weights
-    W2 -= learning_rate * dW2
-    b2 -= learning_rate * db2
-    W1 -= learning_rate * dW1
-    b1 -= learning_rate * db1
+    print(f"Epoch {epoch+1}, Loss: {loss.item():.4f}")
 
-    print(f"Epoch {epoch+1}, Loss: {loss:.4f}")
+# 8. Evaluation
+model.eval()
+with torch.no_grad():
+    outputs = model(X_test)
+    _, predicted = torch.max(outputs, 1)
 
-# Prediction
-def predict(X):
-    Z1 = np.dot(X, W1) + b1
-    A1 = relu(Z1)
-    Z2 = np.dot(A1, W2) + b2
-    A2 = softmax(Z2)
-    return np.argmax(A2, axis=1)
-
-# Accuracy
-y_pred = predict(X_test)
-y_true = np.argmax(y_test, axis=1)
-accuracy = np.mean(y_pred == y_true)
-print(f"\nFinal Accuracy: {accuracy}")
+    accuracy = (predicted == y_test).float().mean()
+    print("\nFinal Accuracy:", accuracy.item())
